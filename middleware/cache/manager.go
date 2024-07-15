@@ -8,7 +8,7 @@ import (
 	"github.com/gofiber/fiber/v3/internal/memory"
 )
 
-// go:generate msgp
+// go:generate msgp -file="manager.go" -o="manager_msgp.go" -tests=false -unexported
 // msgp -file="manager.go" -o="manager_msgp.go" -tests=false -unexported
 type item struct {
 	body      []byte

@@ -67,7 +67,8 @@ type DefaultCtx struct {
 	viewBindMap         sync.Map             // Default view map to bind template engine
 	bind                *Bind                // Default bind reference
 	redirect            *Redirect            // Default redirect reference
-	redirectionMessages []string             // Messages of the previous redirect
+	//redirectionMessages []string             // Messages of the previous redirect
+	flashMessages flashMsgs // Flash messages
 }
 
 // SendFile defines configuration options when to transfer file with SendFile.
@@ -1901,7 +1902,8 @@ func (c *DefaultCtx) release() {
 	c.route = nil
 	c.fasthttp = nil
 	c.bind = nil
-	c.redirectionMessages = c.redirectionMessages[:0]
+	//c.redirectionMessages = c.redirectionMessages[:0]
+	c.flashMessages = c.flashMessages[:0]
 	c.viewBindMap = sync.Map{}
 	if c.redirect != nil {
 		ReleaseRedirect(c.redirect)

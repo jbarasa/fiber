@@ -6,13 +6,23 @@ package fiber
 
 import (
 	"errors"
-	"strings"
 	"sync"
 
 	"github.com/gofiber/fiber/v3/binder"
 	"github.com/gofiber/utils/v2"
 	"github.com/valyala/bytebufferpool"
 )
+
+// go:generate msgp
+// msgp -file="redirect.go" -o="redirect_msgp.go" -tests=false -unexported
+type flashMsg struct {
+	Key     string
+	Value   string
+	Level   uint
+	isInput bool
+}
+
+type flashMsgs []flashMsg
 
 // Pool for redirection
 var redirectPool = sync.Pool{
@@ -33,17 +43,22 @@ const (
 )
 
 // Redirect is a struct that holds the redirect data.
+//
+//msgp:ignore Redirect
 type Redirect struct {
 	c      *DefaultCtx // Embed ctx
 	status int         // Status code of redirection. Default: StatusFound
 
 	messages []string          // Flash messages
 	oldInput map[string]string // Old input data
+	fmsgs    flashMsgs         // Flash messages
 }
 
 // RedirectConfig A config to use with Redirect().Route()
 // You can specify queries or route parameters.
 // NOTE: We don't use net/url to parse parameters because of it has poor performance. You have to pass map.
+//
+//msgp:ignore RedirectConfig
 type RedirectConfig struct {
 	Params  Map               // Route parameters
 	Queries map[string]string // Query map
@@ -70,11 +85,12 @@ func ReleaseRedirect(r *Redirect) {
 
 func (r *Redirect) release() {
 	r.status = 302
-	r.messages = r.messages[:0]
+	/*r.messages = r.messages[:0]
 	// reset map
 	for k := range r.oldInput {
 		delete(r.oldInput, k)
-	}
+	}*/
+	r.fmsgs = r.fmsgs[:0]
 	r.c = nil
 }
 
@@ -91,7 +107,12 @@ func (r *Redirect) Status(code int) *Redirect {
 // You can get them by using: Redirect().Messages(), Redirect().Message()
 // Note: You must use escape char before using ',' and ':' chars to avoid wrong parsing.
 func (r *Redirect) With(key, value string) *Redirect {
-	r.messages = append(r.messages, key+CookieDataAssigner+value)
+	//r.messages = append(r.messages, key+CookieDataAssigner+value)
+	r.fmsgs = append(r.fmsgs, flashMsg{
+		Key:   key,
+		Value: value,
+		Level: 0,
+	})
 
 	return r
 }
@@ -118,16 +139,16 @@ func (r *Redirect) WithInput() *Redirect {
 }
 
 // Messages Get flash messages.
-func (r *Redirect) Messages() map[string]string {
-	msgs := r.c.redirectionMessages
-	flashMessages := make(map[string]string, len(msgs))
+func (r *Redirect) Messages() flashMsgs {
+	msgs := r.c.flashMessages
+	flashMessages := make(flashMsgs, len(msgs))
 
 	for _, msg := range msgs {
-		k, v := parseMessage(msg)
-
-		if !strings.HasPrefix(k, OldInputDataPrefix) {
-			flashMessages[k] = v
+		if msg.isInput {
+			continue
 		}
+
+		flashMessages = append(flashMessages, msg)
 	}
 
 	return flashMessages
@@ -135,43 +156,38 @@ func (r *Redirect) Messages() map[string]string {
 
 // Message Get flash message by key.
 func (r *Redirect) Message(key string) string {
-	msgs := r.c.redirectionMessages
+	msgs := r.c.flashMessages
 
 	for _, msg := range msgs {
-		k, v := parseMessage(msg)
-
-		if !strings.HasPrefix(k, OldInputDataPrefix) && k == key {
-			return v
+		if msg.Key == key && !msg.isInput {
+			return msg.Value
 		}
 	}
 	return ""
 }
 
 // OldInputs Get old input data.
-func (r *Redirect) OldInputs() map[string]string {
-	msgs := r.c.redirectionMessages
-	oldInputs := make(map[string]string, len(msgs))
+func (r *Redirect) OldInputs() flashMsgs {
+	msgs := r.c.flashMessages
+	oldInputs := make(flashMsgs, len(msgs))
 
 	for _, msg := range msgs {
-		k, v := parseMessage(msg)
-
-		if strings.HasPrefix(k, OldInputDataPrefix) {
-			// remove "old_input_data_" part from key
-			oldInputs[k[len(OldInputDataPrefix):]] = v
+		if !msg.isInput {
+			continue
 		}
+
+		oldInputs = append(oldInputs, msg)
 	}
 	return oldInputs
 }
 
 // OldInput Get old input data by key.
 func (r *Redirect) OldInput(key string) string {
-	msgs := r.c.redirectionMessages
+	msgs := r.c.flashMessages
 
 	for _, msg := range msgs {
-		k, v := parseMessage(msg)
-
-		if strings.HasPrefix(k, OldInputDataPrefix) && k[len(OldInputDataPrefix):] == key {
-			return v
+		if msg.Key == key && msg.isInput {
+			return msg.Value
 		}
 	}
 	return ""
@@ -245,7 +261,10 @@ func (r *Redirect) parseAndClearFlashMessages() {
 	// parse flash messages
 	cookieValue := r.c.Cookies(FlashCookieName)
 
-	var commaPos int
+	var messages flashMsgs
+	messages.UnmarshalMsg([]byte(cookieValue))
+
+	/*var commaPos int
 	for {
 		commaPos = findNextNonEscapedCharsetPosition(cookieValue, []byte(CookieDataSeparator))
 		if commaPos == -1 {
@@ -254,8 +273,8 @@ func (r *Redirect) parseAndClearFlashMessages() {
 		}
 		r.c.redirectionMessages = append(r.c.redirectionMessages, strings.Trim(cookieValue[:commaPos], " "))
 		cookieValue = cookieValue[commaPos+1:]
-	}
-
+	}*/
+	r.c.flashMessages = messages
 	r.c.ClearCookie(FlashCookieName)
 }
 
@@ -263,7 +282,7 @@ func (r *Redirect) parseAndClearFlashMessages() {
 // and set them as cookies
 func (r *Redirect) processFlashMessages() {
 	// Flash messages
-	if len(r.messages) > 0 || len(r.oldInput) > 0 {
+	/*if len(r.messages) > 0 || len(r.oldInput) > 0 {
 		messageText := bytebufferpool.Get()
 		defer bytebufferpool.Put(messageText)
 
@@ -292,6 +311,20 @@ func (r *Redirect) processFlashMessages() {
 			Value:       r.c.app.getString(messageText.Bytes()),
 			SessionOnly: true,
 		})
+	}*/
+
+	if len(r.fmsgs) > 0 {
+		data, err := r.fmsgs.MarshalMsg(nil)
+		if err != nil {
+			return
+		}
+
+		r.c.Cookie(&Cookie{
+			Name:        FlashCookieName,
+			Value:       r.c.app.getString(data),
+			SessionOnly: true,
+		})
+
 	}
 }
 

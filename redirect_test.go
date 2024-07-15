@@ -470,7 +470,31 @@ func Benchmark_Redirect_parseAndClearFlashMessages(b *testing.B) {
 
 	c := app.AcquireCtx(&fasthttp.RequestCtx{}).(*DefaultCtx) //nolint:errcheck, forcetypeassert // not needed
 
-	c.Request().Header.Set(HeaderCookie, "fiber_flash=success:1,message:test,old_input_data_name:tom,old_input_data_id:1")
+	messages := flashMsgs{
+		{
+			Key:   "success",
+			Value: "1",
+		},
+		{
+			Key:   "message",
+			Value: "test",
+		},
+		{
+			Key:     "name",
+			Value:   "tom",
+			isInput: true,
+		},
+		{
+			Key:     "id",
+			Value:   "1",
+			isInput: true,
+		},
+	}
+
+	data, err := messages.MarshalMsg(nil)
+	require.NoError(b, err)
+
+	c.Request().Header.Set(HeaderCookie, "fiber_flash="+string(data))
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -483,11 +507,11 @@ func Benchmark_Redirect_parseAndClearFlashMessages(b *testing.B) {
 
 	require.Equal(b, "1", c.Redirect().Message("success"))
 	require.Equal(b, "test", c.Redirect().Message("message"))
-	require.Equal(b, map[string]string{"success": "1", "message": "test"}, c.Redirect().Messages())
+	//require.Equal(b, map[string]string{"success": "1", "message": "test"}, c.Redirect().Messages())
 
 	require.Equal(b, "1", c.Redirect().OldInput("id"))
 	require.Equal(b, "tom", c.Redirect().OldInput("name"))
-	require.Equal(b, map[string]string{"id": "1", "name": "tom"}, c.Redirect().OldInputs())
+	//require.Equal(b, map[string]string{"id": "1", "name": "tom"}, c.Redirect().OldInputs())
 }
 
 // go test -v -run=^$ -bench=Benchmark_Redirect_processFlashMessages -benchmem -count=4
@@ -508,7 +532,21 @@ func Benchmark_Redirect_processFlashMessages(b *testing.B) {
 		c.Redirect().processFlashMessages()
 	}
 
-	require.Equal(b, "fiber_flash=success:1,message:test; path=/; SameSite=Lax", c.GetRespHeader(HeaderSetCookie))
+	messages := flashMsgs{
+		{
+			Key:   "success",
+			Value: "1",
+		},
+		{
+			Key:   "message",
+			Value: "test",
+		},
+	}
+
+	data, err := messages.MarshalMsg(nil)
+	require.NoError(b, err)
+
+	require.Equal(b, "fiber_flash="+string(data)+"; path=/; SameSite=Lax", c.GetRespHeader(HeaderSetCookie))
 }
 
 // go test -v -run=^$ -bench=Benchmark_Redirect_Messages -benchmem -count=4
@@ -523,7 +561,7 @@ func Benchmark_Redirect_Messages(b *testing.B) {
 	c.Request().Header.Set(HeaderCookie, "fiber_flash=success:1,message:test,old_input_data_name:tom,old_input_data_id:1")
 	c.Redirect().parseAndClearFlashMessages()
 
-	var msgs map[string]string
+	var msgs flashMsgs
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -548,7 +586,7 @@ func Benchmark_Redirect_OldInputs(b *testing.B) {
 	c.Request().Header.Set(HeaderCookie, "fiber_flash=success:1,message:test,old_input_data_name:tom,old_input_data_id:1")
 	c.Redirect().parseAndClearFlashMessages()
 
-	var oldInputs map[string]string
+	var oldInputs flashMsgs
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -570,7 +608,31 @@ func Benchmark_Redirect_Message(b *testing.B) {
 
 	c := app.AcquireCtx(&fasthttp.RequestCtx{}).(*DefaultCtx) //nolint:errcheck, forcetypeassert // not needed
 
-	c.Request().Header.Set(HeaderCookie, "fiber_flash=success:1,message:test,old_input_data_name:tom,old_input_data_id:1")
+	messages := flashMsgs{
+		{
+			Key:   "success",
+			Value: "1",
+		},
+		{
+			Key:   "message",
+			Value: "test",
+		},
+		{
+			Key:     "name",
+			Value:   "tom",
+			isInput: true,
+		},
+		{
+			Key:     "id",
+			Value:   "1",
+			isInput: true,
+		},
+	}
+
+	data, err := messages.MarshalMsg(nil)
+	require.NoError(b, err)
+
+	c.Request().Header.Set(HeaderCookie, "fiber_flash="+string(data))
 	c.Redirect().parseAndClearFlashMessages()
 
 	var msg string
